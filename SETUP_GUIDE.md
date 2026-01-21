@@ -28,7 +28,7 @@ This guide will walk you through the complete setup process from scratch to runn
 Before starting, ensure you have the following:
 
 ### Required:
-- ✅ **Python 3.7 or higher** - [Download Python](https://www.python.org/downloads/)
+- ✅ **Python 3.8 or higher** - [Download Python](https://www.python.org/downloads/)
 - ✅ **Webcam** (built-in or external)
 - ✅ **4GB RAM** (minimum)
 - ✅ **Internet connection** (for downloading dependencies)
@@ -84,7 +84,7 @@ python --version
 python3 --version
 ```
 
-**Expected Output:** `Python 3.7.x` or higher
+**Expected Output:** `Python 3.8.x` or higher
 
 > **Note:** If Python is not installed, download and install it from [python.org](https://www.python.org/downloads/)
 
@@ -158,7 +158,7 @@ Let's verify that everything is installed correctly:
 ### Test 1: Check Python Dependencies
 
 ```bash
-python -c "import cv2, mediapipe, pyautogui, numpy; print('✅ All core dependencies installed successfully!')"
+python -c "import cv2, mediapipe, pyautogui, numpy, PyQt5; print('✅ All core dependencies installed successfully!')"
 ```
 
 **Expected Output:** `✅ All core dependencies installed successfully!`
@@ -362,7 +362,7 @@ docker-compose down
 ### Problem: Python not found
 
 **Solution:**
-- Download and install Python from [python.org](https://www.python.org/downloads/)
+- Download and install Python 3.8 or higher from [python.org](https://www.python.org/downloads/)
 - During installation, check "Add Python to PATH"
 - Restart your terminal after installation
 
@@ -431,11 +431,13 @@ pip install mediapipe
 ### Problem: Cursor moves too fast/slow
 
 **Solution:**
-Edit `config/default_config.yaml`:
+Edit `config/default_config.yaml` and adjust the sensitivity value:
 ```yaml
 mouse_control:
   sensitivity: 1.0  # Lower = slower, Higher = faster (range: 0.1 - 3.0)
   smoothing: 5      # Higher = smoother movement
+  dwell_time: 1.5
+  click_mode: dwell
 ```
 
 ### Problem: Clicks not registering
@@ -443,10 +445,13 @@ mouse_control:
 **Solution:**
 1. Ensure mouse control is enabled (press `M`)
 2. Hold your gaze steady for the full dwell time
-3. Adjust dwell time in config:
+3. Adjust dwell time in `config/default_config.yaml`:
 ```yaml
 mouse_control:
+  sensitivity: 1.0
+  smoothing: 5
   dwell_time: 1.5  # Lower = faster clicks (range: 0.5 - 3.0)
+  click_mode: dwell
 ```
 
 ### Problem: Application crashes on startup
@@ -536,7 +541,7 @@ mouse_control:
 
 Use this checklist to track your progress:
 
-- [ ] Python 3.7+ installed
+- [ ] Python 3.8+ installed
 - [ ] Repository cloned
 - [ ] Virtual environment created
 - [ ] Virtual environment activated
