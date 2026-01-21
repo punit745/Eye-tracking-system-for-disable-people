@@ -1,0 +1,363 @@
+"""
+Main Application Module
+Main application for eye tracking system with GUI.
+"""
+
+import cv2
+import numpy as np
+import time
+from typing import Optional
+import sys
+import os
+
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from core.eye_tracker import EyeTracker
+from core.mouse_controller import MouseController, ClickMode
+from core.calibration import Calibration
+from core.virtual_keyboard import VirtualKeyboard
+from utils.config import Config
+from utils.logger import setup_logger, PerformanceLogger
+
+
+class EyeTrackingApp:
+    """Main application for eye tracking system."""
+    
+    def __init__(self, config_file: str = None):
+        """
+        Initialize application.
+        
+        Args:
+            config_file: Path to configuration file
+        """
+        # Load configuration
+        self.config = Config(config_file)
+        
+        # Setup logger
+        log_config = self.config.get_section('logging')
+        self.logger = setup_logger(
+            name="EyeTrackingApp",
+            log_file=log_config.get('log_file'),
+            level=log_config.get('level', 'INFO')
+        )
+        
+        self.perf_logger = PerformanceLogger(self.logger)
+        
+        # Initialize camera
+        self.camera = None
+        self.init_camera()
+        
+        # Initialize components
+        self.eye_tracker = EyeTracker(
+            max_faces=self.config.get('eye_tracking.max_faces', 1),
+            min_detection_confidence=self.config.get('eye_tracking.min_detection_confidence', 0.5),
+            min_tracking_confidence=self.config.get('eye_tracking.min_tracking_confidence', 0.5)
+        )
+        
+        click_mode_str = self.config.get('mouse_control.click_mode', 'dwell')
+        click_mode = ClickMode.DWELL if click_mode_str == 'dwell' else ClickMode.BLINK
+        
+        self.mouse_controller = MouseController(
+            sensitivity=self.config.get('mouse_control.sensitivity', 1.0),
+            smoothing=self.config.get('mouse_control.smoothing', 5),
+            dwell_time=self.config.get('mouse_control.dwell_time', 1.5),
+            click_mode=click_mode
+        )
+        
+        self.calibration = Calibration()
+        self.virtual_keyboard = VirtualKeyboard(
+            position=tuple(self.config.get('keyboard.position', [50, 50])),
+            key_size=tuple(self.config.get('keyboard.key_size', [60, 60])),
+            spacing=self.config.get('keyboard.spacing', 10),
+            dwell_time=self.config.get('keyboard.dwell_time', 1.5)
+        )
+        
+        # Application state
+        self.is_running = False
+        self.is_calibrating = False
+        self.show_ui = True
+        self.fps = 0
+        
+        self.logger.info("Eye Tracking Application initialized")
+    
+    def init_camera(self):
+        """Initialize camera."""
+        camera_config = self.config.get_section('camera')
+        device_id = camera_config.get('device_id', 0)
+        
+        self.camera = cv2.VideoCapture(device_id)
+        
+        if not self.camera.isOpened():
+            self.logger.error(f"Failed to open camera {device_id}")
+            raise RuntimeError(f"Cannot open camera {device_id}")
+        
+        # Set camera properties
+        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, camera_config.get('width', 640))
+        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_config.get('height', 480))
+        self.camera.set(cv2.CAP_PROP_FPS, camera_config.get('fps', 30))
+        
+        self.logger.info(f"Camera initialized: {device_id}")
+    
+    def start_calibration(self):
+        """Start calibration process."""
+        self.is_calibrating = True
+        self.calibration.start()
+        self.mouse_controller.disable()
+        self.logger.info("Calibration started")
+    
+    def handle_keyboard_input(self, key: int) -> bool:
+        """
+        Handle keyboard input.
+        
+        Args:
+            key: Key code from cv2.waitKey()
+            
+        Returns:
+            True if application should continue, False to quit
+        """
+        if key == ord('q') or key == 27:  # 'q' or ESC
+            return False
+        elif key == ord('c'):  # Start calibration
+            self.start_calibration()
+        elif key == ord('k'):  # Toggle keyboard
+            self.virtual_keyboard.toggle()
+            self.logger.info(f"Virtual keyboard: {'shown' if self.virtual_keyboard.is_visible else 'hidden'}")
+        elif key == ord('m'):  # Toggle mouse control
+            self.mouse_controller.toggle_control()
+            self.logger.info(f"Mouse control: {'enabled' if self.mouse_controller.is_enabled else 'disabled'}")
+        elif key == ord('h'):  # Toggle UI
+            self.show_ui = not self.show_ui
+        elif key == ord('r'):  # Reset calibration
+            self.calibration.reset()
+            self.eye_tracker.reset_calibration()
+            self.logger.info("Calibration reset")
+        elif key == ord(' '):  # Manual click
+            self.mouse_controller.click()
+        
+        return True
+    
+    def process_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Process a single frame."""
+        self.perf_logger.start_timer("frame")
+        
+        # Track eyes
+        processed_frame, eye_data = self.eye_tracker.process_frame(frame)
+        
+        if processed_frame is None:
+            return frame
+        
+        # Get gaze information
+        gaze_ratio = None
+        if eye_data and eye_data.get('gaze_ratio'):
+            gaze_ratio = self.eye_tracker.get_smoothed_gaze(eye_data['gaze_ratio'])
+        
+        # Handle calibration
+        if self.is_calibrating:
+            if self.calibration.is_active:
+                if gaze_ratio:
+                    is_complete = self.calibration.update(gaze_ratio)
+                    if is_complete:
+                        # Apply calibration
+                        cal_data = self.calibration.get_calibration_data()
+                        if cal_data:
+                            for point in cal_data:
+                                self.eye_tracker.add_calibration_point(
+                                    point['screen'], point['gaze']
+                                )
+                            self.eye_tracker.calibrate()
+                        
+                        self.is_calibrating = False
+                        self.mouse_controller.enable()
+                        self.logger.info("Calibration completed")
+                
+                # Draw calibration UI
+                current_point = self.calibration.get_current_point()
+                if current_point:
+                    # Create fullscreen calibration display
+                    h, w = processed_frame.shape[:2]
+                    screen_w = self.calibration.screen_width
+                    screen_h = self.calibration.screen_height
+                    
+                    cal_frame = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
+                    self.calibration.draw_calibration_point(cal_frame, current_point.screen_pos)
+                    self.calibration.draw_progress(cal_frame)
+                    
+                    # Resize and overlay on video feed
+                    cal_frame_resized = cv2.resize(cal_frame, (w, h))
+                    processed_frame = cv2.addWeighted(processed_frame, 0.3, cal_frame_resized, 0.7, 0)
+        else:
+            # Normal operation - control mouse
+            if gaze_ratio and self.mouse_controller.is_enabled:
+                # Convert gaze to screen position
+                screen_pos = self.eye_tracker.gaze_to_screen_position(
+                    gaze_ratio,
+                    self.calibration.screen_width,
+                    self.calibration.screen_height
+                )
+                
+                if screen_pos:
+                    # Move cursor
+                    self.mouse_controller.move_cursor(screen_pos)
+                    
+                    # Handle clicking based on mode
+                    if self.mouse_controller.click_mode == ClickMode.DWELL:
+                        self.mouse_controller.check_dwell_click(screen_pos)
+                    elif self.mouse_controller.click_mode == ClickMode.BLINK:
+                        is_blinking = self.eye_tracker.detect_blink(eye_data)
+                        self.mouse_controller.check_blink_click(is_blinking)
+                    
+                    # Draw gaze indicator on screen
+                    if self.show_ui:
+                        h, w = processed_frame.shape[:2]
+                        # Scale screen position to frame
+                        frame_x = int(screen_pos[0] * w / self.calibration.screen_width)
+                        frame_y = int(screen_pos[1] * h / self.calibration.screen_height)
+                        
+                        # Draw crosshair
+                        cv2.circle(processed_frame, (frame_x, frame_y), 10, (0, 255, 0), 2)
+                        cv2.line(processed_frame, (frame_x - 15, frame_y), (frame_x + 15, frame_y), (0, 255, 0), 2)
+                        cv2.line(processed_frame, (frame_x, frame_y - 15), (frame_x, frame_y + 15), (0, 255, 0), 2)
+                        
+                        # Draw dwell progress
+                        if self.mouse_controller.click_mode == ClickMode.DWELL:
+                            progress = self.mouse_controller.get_dwell_progress()
+                            if progress > 0:
+                                radius = int(20 + progress * 20)
+                                cv2.circle(processed_frame, (frame_x, frame_y), radius, (0, 255, 0), 2)
+            
+            # Handle virtual keyboard
+            if self.virtual_keyboard.is_visible and gaze_ratio:
+                screen_pos = self.eye_tracker.gaze_to_screen_position(
+                    gaze_ratio,
+                    self.calibration.screen_width,
+                    self.calibration.screen_height
+                )
+                self.virtual_keyboard.update(screen_pos, processed_frame)
+        
+        # Draw UI
+        if self.show_ui:
+            self.draw_ui(processed_frame)
+        
+        self.perf_logger.stop_timer("frame")
+        
+        return processed_frame
+    
+    def draw_ui(self, frame: np.ndarray):
+        """Draw UI elements on frame."""
+        h, w = frame.shape[:2]
+        
+        # Draw FPS
+        self.fps = self.perf_logger.get_fps("frame")
+        fps_text = f"FPS: {self.fps:.1f}"
+        cv2.putText(frame, fps_text, (10, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        # Draw status
+        status_y = 60
+        if self.mouse_controller.is_enabled:
+            status = "Mouse: ON"
+            color = (0, 255, 0)
+        else:
+            status = "Mouse: OFF"
+            color = (0, 0, 255)
+        cv2.putText(frame, status, (10, status_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        
+        # Draw calibration status
+        if self.eye_tracker.is_calibrated:
+            cal_status = "Calibrated"
+            cal_color = (0, 255, 0)
+        else:
+            cal_status = "Not Calibrated"
+            cal_color = (0, 0, 255)
+        cv2.putText(frame, cal_status, (10, 90),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, cal_color, 2)
+        
+        # Draw help text
+        help_y = h - 100
+        help_texts = [
+            "Q/ESC: Quit",
+            "C: Calibrate",
+            "K: Keyboard",
+            "M: Toggle Mouse",
+            "H: Hide UI"
+        ]
+        for i, text in enumerate(help_texts):
+            cv2.putText(frame, text, (10, help_y + i * 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    
+    def run(self):
+        """Run main application loop."""
+        self.is_running = True
+        self.logger.info("Starting eye tracking application")
+        
+        try:
+            while self.is_running:
+                # Read frame
+                ret, frame = self.camera.read()
+                if not ret:
+                    self.logger.error("Failed to read frame from camera")
+                    break
+                
+                # Flip frame horizontally for mirror effect
+                frame = cv2.flip(frame, 1)
+                
+                # Process frame
+                processed_frame = self.process_frame(frame)
+                
+                # Display
+                cv2.imshow("Eye Tracking System", processed_frame)
+                
+                # Handle keyboard input
+                key = cv2.waitKey(1) & 0xFF
+                if key != 255:
+                    if not self.handle_keyboard_input(key):
+                        break
+                
+        except KeyboardInterrupt:
+            self.logger.info("Application interrupted by user")
+        except Exception as e:
+            self.logger.error(f"Error in main loop: {e}", exc_info=True)
+        finally:
+            self.cleanup()
+    
+    def cleanup(self):
+        """Clean up resources."""
+        self.logger.info("Cleaning up...")
+        
+        self.is_running = False
+        
+        if self.camera:
+            self.camera.release()
+        
+        if self.eye_tracker:
+            self.eye_tracker.release()
+        
+        cv2.destroyAllWindows()
+        
+        self.logger.info("Application closed")
+
+
+def main():
+    """Main entry point."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Eye Tracking System for People with Disabilities")
+    parser.add_argument('--config', type=str, help='Path to configuration file')
+    args = parser.parse_args()
+    
+    try:
+        app = EyeTrackingApp(config_file=args.config)
+        app.run()
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,22 @@
+# Core dependencies for Eye Tracking System
+opencv-python==4.8.1.78
+mediapipe==0.10.8
+numpy==1.24.3
+pyautogui==0.9.54
+pillow==10.1.0
+scipy==1.11.4
+
+# GUI and visualization
+PyQt5==5.15.10
+matplotlib==3.8.2
+
+# Utilities
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Logging and monitoring
+colorlog==6.8.0
+
+# Additional utilities
+screeninfo==0.8.1
+pynput==1.7.6
