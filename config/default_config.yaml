@@ -1,0 +1,46 @@
+# Default Configuration for Eye Tracking System
+
+camera:
+  device_id: 0
+  width: 640
+  height: 480
+  fps: 30
+
+eye_tracking:
+  max_faces: 1
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+  smoothing_window: 5
+
+mouse_control:
+  sensitivity: 1.0
+  smoothing: 5
+  dwell_time: 1.5
+  click_mode: dwell  # Options: dwell, blink, manual
+
+calibration:
+  num_points: 9
+  samples_per_point: 30
+  dwell_time: 2.0
+
+keyboard:
+  position: [50, 50]
+  key_size: [60, 60]
+  spacing: 10
+  dwell_time: 1.5
+
+accessibility:
+  blink_detection: true
+  gesture_control: true
+  voice_feedback: false
+
+ui:
+  show_video_feed: true
+  show_gaze_indicator: true
+  show_fps: true
+  fullscreen: false
+
+logging:
+  enabled: true
+  level: INFO
+  log_file: logs/eye_tracker.log
