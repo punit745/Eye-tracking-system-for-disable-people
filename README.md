@@ -2,6 +2,13 @@
 
 A comprehensive, deployment-ready eye tracking system that enables people with physical disabilities to control their computer or smartphone interface through eye movements. This system serves as a replacement for traditional input devices (mouse, keyboard, touchpad) and is particularly helpful for people with spinal cord injuries, ALS (Amyotrophic Lateral Sclerosis), or other mobility-related challenges.
 
+## 📖 Getting Started
+
+**New to this project?** Follow our comprehensive step-by-step guide:
+- 📘 **[Complete Setup Guide](SETUP_GUIDE.md)** - Detailed instructions from installation to first use
+- 🚀 **[Quick Start Guide](QUICK_START.md)** - Get running in 3 simple steps
+- 📚 **[Installation Guide](docs/INSTALLATION.md)** - Advanced installation options
+
 ## 🎯 Features
 
 ### Core Functionality
