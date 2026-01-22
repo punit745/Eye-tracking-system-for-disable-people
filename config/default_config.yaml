@@ -46,6 +46,7 @@ gesture_settings:
   hand_detection_confidence: 0.7
   hand_tracking_confidence: 0.5
   gesture_cooldown: 0.5
+  swipe_threshold: 100  # Minimum pixel distance for swipe detection
 
 ui:
   show_video_feed: true

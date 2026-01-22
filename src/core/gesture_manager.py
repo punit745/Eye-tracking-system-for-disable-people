@@ -169,12 +169,13 @@ class GestureManager:
             elif avg_v > (0.5 + self.gaze_direction_threshold):
                 detected_gesture = EyeGesture.LOOK_DOWN
         
-        # Trigger callback if gesture detected
+        # Trigger callback if gesture detected and update time
         if detected_gesture and detected_gesture in self.gesture_callbacks:
             self.gesture_callbacks[detected_gesture]()
             self.last_gesture_time = current_time
+            return detected_gesture
         
-        return detected_gesture
+        return None
     
     def get_current_blink_duration(self, current_time: float) -> float:
         """Get duration of current blink if blinking."""

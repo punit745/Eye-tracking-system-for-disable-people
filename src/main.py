@@ -84,6 +84,9 @@ class EyeTrackingApp:
                 min_detection_confidence=0.7,
                 min_tracking_confidence=0.5
             )
+            # Set swipe threshold from config
+            swipe_threshold = self.config.get('gesture_settings.swipe_threshold', 100)
+            self.hand_gesture_recognizer.swipe_threshold = swipe_threshold
             self._setup_hand_gesture_callbacks()
         
         # Application state
@@ -153,46 +156,20 @@ class EyeTrackingApp:
         if not self.hand_gesture_recognizer:
             return
         
-        # Fist -> left click
-        self.hand_gesture_recognizer.register_callback(
-            HandGesture.FIST,
-            lambda: self._on_hand_gesture(HandGesture.FIST)
-        )
+        # Define gesture action mapping
+        gesture_actions = {
+            HandGesture.FIST: lambda: self._on_hand_gesture(HandGesture.FIST),
+            HandGesture.OPEN_PALM: lambda: self._on_hand_gesture(HandGesture.OPEN_PALM),
+            HandGesture.THUMBS_UP: lambda: self._on_hand_gesture(HandGesture.THUMBS_UP),
+            HandGesture.THUMBS_DOWN: lambda: self._on_hand_gesture(HandGesture.THUMBS_DOWN),
+            HandGesture.PEACE: lambda: self._on_hand_gesture(HandGesture.PEACE),
+            HandGesture.SWIPE_UP: lambda: self._on_hand_gesture(HandGesture.SWIPE_UP),
+            HandGesture.SWIPE_DOWN: lambda: self._on_hand_gesture(HandGesture.SWIPE_DOWN),
+        }
         
-        # Open palm -> right click
-        self.hand_gesture_recognizer.register_callback(
-            HandGesture.OPEN_PALM,
-            lambda: self._on_hand_gesture(HandGesture.OPEN_PALM)
-        )
-        
-        # Thumbs up -> scroll up
-        self.hand_gesture_recognizer.register_callback(
-            HandGesture.THUMBS_UP,
-            lambda: self._on_hand_gesture(HandGesture.THUMBS_UP)
-        )
-        
-        # Thumbs down -> scroll down
-        self.hand_gesture_recognizer.register_callback(
-            HandGesture.THUMBS_DOWN,
-            lambda: self._on_hand_gesture(HandGesture.THUMBS_DOWN)
-        )
-        
-        # Peace sign -> double click
-        self.hand_gesture_recognizer.register_callback(
-            HandGesture.PEACE,
-            lambda: self._on_hand_gesture(HandGesture.PEACE)
-        )
-        
-        # Swipe gestures
-        self.hand_gesture_recognizer.register_callback(
-            HandGesture.SWIPE_UP,
-            lambda: self._on_hand_gesture(HandGesture.SWIPE_UP)
-        )
-        
-        self.hand_gesture_recognizer.register_callback(
-            HandGesture.SWIPE_DOWN,
-            lambda: self._on_hand_gesture(HandGesture.SWIPE_DOWN)
-        )
+        # Register callbacks
+        for gesture, callback in gesture_actions.items():
+            self.hand_gesture_recognizer.register_callback(gesture, callback)
     
     def _on_eye_gesture(self, gesture: EyeGesture):
         """Handle eye gesture detection."""
@@ -232,40 +209,22 @@ class EyeTrackingApp:
         """Handle hand gesture detection."""
         self.last_hand_gesture = gesture
         
-        if gesture == HandGesture.FIST:
-            # Left click
-            self.mouse_controller.click()
-            self.logger.info("Hand gesture: Fist -> Click")
+        # Define gesture action mapping
+        gesture_actions = {
+            HandGesture.FIST: lambda: (self.mouse_controller.click(), "Fist -> Click"),
+            HandGesture.OPEN_PALM: lambda: (self.mouse_controller.right_click(), "Open palm -> Right click"),
+            HandGesture.THUMBS_UP: lambda: (self.mouse_controller.scroll(5), None),  # No log for frequent actions
+            HandGesture.THUMBS_DOWN: lambda: (self.mouse_controller.scroll(-5), None),
+            HandGesture.PEACE: lambda: (self.mouse_controller.double_click(), "Peace -> Double click"),
+            HandGesture.SWIPE_UP: lambda: (self.mouse_controller.scroll(10), "Swipe up -> Page up"),
+            HandGesture.SWIPE_DOWN: lambda: (self.mouse_controller.scroll(-10), "Swipe down -> Page down"),
+        }
         
-        elif gesture == HandGesture.OPEN_PALM:
-            # Right click
-            self.mouse_controller.right_click()
-            self.logger.info("Hand gesture: Open palm -> Right click")
-        
-        elif gesture == HandGesture.THUMBS_UP:
-            # Scroll up
-            self.mouse_controller.scroll(5)
-            self.logger.debug("Hand gesture: Thumbs up -> Scroll up")
-        
-        elif gesture == HandGesture.THUMBS_DOWN:
-            # Scroll down
-            self.mouse_controller.scroll(-5)
-            self.logger.debug("Hand gesture: Thumbs down -> Scroll down")
-        
-        elif gesture == HandGesture.PEACE:
-            # Double click
-            self.mouse_controller.double_click()
-            self.logger.info("Hand gesture: Peace -> Double click")
-        
-        elif gesture == HandGesture.SWIPE_UP:
-            # Page up / Large scroll up
-            self.mouse_controller.scroll(10)
-            self.logger.info("Hand gesture: Swipe up -> Page up")
-        
-        elif gesture == HandGesture.SWIPE_DOWN:
-            # Page down / Large scroll down
-            self.mouse_controller.scroll(-10)
-            self.logger.info("Hand gesture: Swipe down -> Page down")
+        # Execute action if mapped
+        if gesture in gesture_actions:
+            result = gesture_actions[gesture]()
+            if result and result[1]:  # Log if message provided
+                self.logger.info(f"Hand gesture: {result[1]}")
     
     def start_calibration(self):
         """Start calibration process."""

@@ -66,6 +66,9 @@ class HandGestureRecognizer:
         
         # Enable/disable flag
         self.is_enabled = True
+        
+        # Configurable swipe threshold
+        self.swipe_threshold = 100  # pixels
     
     def register_callback(self, gesture: HandGesture, callback):
         """Register a callback for a specific gesture."""
@@ -262,10 +265,32 @@ class HandGestureRecognizer:
         # Calculate distance and direction
         distance = np.sqrt(dx**2 + dy**2)
         
-        # Threshold for swipe detection (pixels)
-        swipe_threshold = 100
+        # Configurable threshold for swipe detection (pixels)
+        # Note: This should be made configurable via config file in future
+        swipe_threshold = getattr(self, 'swipe_threshold', 100)
         
         if distance < swipe_threshold:
+            return None
+        
+        # Check trajectory smoothness to reduce false positives
+        # Calculate consistency of movement direction
+        consistent_movement = True
+        if len(self.hand_positions) >= 3:
+            # Check if intermediate points follow the same general direction
+            mid_idx = len(self.hand_positions) // 2
+            mid_pos = self.hand_positions[mid_idx]
+            
+            # Vector from start to mid
+            mid_dx = mid_pos[0] - start_pos[0]
+            mid_dy = mid_pos[1] - start_pos[1]
+            
+            # Check if mid point is roughly between start and end
+            # If movement changed direction significantly, it's not a clean swipe
+            dot_product = (mid_dx * dx + mid_dy * dy)
+            if dot_product < 0:  # Movement changed direction
+                consistent_movement = False
+        
+        if not consistent_movement:
             return None
         
         # Determine direction
