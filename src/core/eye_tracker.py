@@ -8,6 +8,7 @@ import mediapipe as mp
 import numpy as np
 from typing import Tuple, Optional, List
 import time
+from core.gesture_manager import GestureManager, EyeGesture
 
 
 class EyeTracker:
@@ -50,6 +51,14 @@ class EyeTracker:
         # Smoothing
         self.gaze_history = []
         self.smoothing_window = 5
+        
+        # Gesture manager for advanced gestures
+        self.gesture_manager = GestureManager(
+            blink_threshold=0.25,
+            double_blink_interval=0.5,
+            long_blink_duration=0.8,
+            gaze_direction_threshold=0.15
+        )
         
     def process_frame(self, frame: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[dict]]:
         """
@@ -96,6 +105,11 @@ class EyeTracker:
                 avg_gaze_ratio = ((left_gaze_ratio[0] + right_gaze_ratio[0]) / 2,
                                  (left_gaze_ratio[1] + right_gaze_ratio[1]) / 2)
             
+            # Calculate Eye Aspect Ratio for both eyes
+            left_ear = self._calculate_ear(left_eye_points)
+            right_ear = self._calculate_ear(right_eye_points)
+            avg_ear = (left_ear + right_ear) / 2.0
+            
             eye_data = {
                 'left_eye': left_eye_points,
                 'right_eye': right_eye_points,
@@ -104,7 +118,10 @@ class EyeTracker:
                 'left_gaze_ratio': left_gaze_ratio,
                 'right_gaze_ratio': right_gaze_ratio,
                 'gaze_ratio': avg_gaze_ratio,
-                'face_landmarks': face_landmarks
+                'face_landmarks': face_landmarks,
+                'left_ear': left_ear,
+                'right_ear': right_ear,
+                'avg_ear': avg_ear
             }
             
             # Draw visualizations
@@ -260,20 +277,52 @@ class EyeTracker:
     
     def detect_blink(self, eye_data: dict) -> bool:
         """
-        Detect if user is blinking.
+        Detect if user is blinking (simple version).
         Uses Eye Aspect Ratio (EAR) to detect blinks.
         """
-        if not eye_data or 'left_eye' not in eye_data or 'right_eye' not in eye_data:
+        if not eye_data or 'avg_ear' not in eye_data:
             return False
         
-        left_ear = self._calculate_ear(eye_data['left_eye'])
-        right_ear = self._calculate_ear(eye_data['right_eye'])
-        
-        # Average EAR
-        ear = (left_ear + right_ear) / 2.0
-        
         # Blink threshold (typically around 0.2-0.25)
-        return ear < 0.25
+        return eye_data['avg_ear'] < 0.25
+    
+    def detect_eye_gesture(self, eye_data: dict) -> Optional[EyeGesture]:
+        """
+        Detect advanced eye gestures (single blink, double blink, directional gaze).
+        
+        Args:
+            eye_data: Dictionary containing eye tracking data
+            
+        Returns:
+            Detected gesture or None
+        """
+        if not eye_data:
+            return None
+        
+        current_time = time.time()
+        detected_gesture = None
+        
+        # Detect blink-based gestures
+        if 'avg_ear' in eye_data:
+            blink_gesture = self.gesture_manager.detect_blink(
+                eye_data['avg_ear'], 
+                current_time
+            )
+            if blink_gesture:
+                detected_gesture = blink_gesture
+        
+        # Detect gaze direction gestures
+        if detected_gesture is None and 'gaze_ratio' in eye_data:
+            gaze_ratio = eye_data['gaze_ratio']
+            if gaze_ratio:
+                direction_gesture = self.gesture_manager.detect_gaze_direction(
+                    gaze_ratio,
+                    current_time
+                )
+                if direction_gesture:
+                    detected_gesture = direction_gesture
+        
+        return detected_gesture
     
     def _calculate_ear(self, eye_points: np.ndarray) -> float:
         """Calculate Eye Aspect Ratio (EAR)."""
@@ -293,6 +342,10 @@ class EyeTracker:
         # EAR formula
         ear = (vertical_1 + vertical_2) / (2.0 * horizontal)
         return ear
+    
+    def register_gesture_callback(self, gesture: EyeGesture, callback):
+        """Register a callback for a specific eye gesture."""
+        self.gesture_manager.register_callback(gesture, callback)
     
     def release(self):
         """Release resources."""
