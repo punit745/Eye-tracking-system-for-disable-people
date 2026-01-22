@@ -17,6 +17,8 @@ from core.eye_tracker import EyeTracker
 from core.mouse_controller import MouseController, ClickMode
 from core.calibration import Calibration
 from core.virtual_keyboard import VirtualKeyboard
+from core.hand_gesture_recognizer import HandGestureRecognizer, HandGesture
+from core.gesture_manager import EyeGesture
 from utils.config import Config
 from utils.logger import setup_logger, PerformanceLogger
 
@@ -73,11 +75,30 @@ class EyeTrackingApp:
             dwell_time=self.config.get('keyboard.dwell_time', 1.5)
         )
         
+        # Initialize hand gesture recognizer
+        self.hand_gesture_enabled = self.config.get('accessibility.hand_gestures', True)
+        self.hand_gesture_recognizer = None
+        if self.hand_gesture_enabled:
+            self.hand_gesture_recognizer = HandGestureRecognizer(
+                max_hands=1,
+                min_detection_confidence=0.7,
+                min_tracking_confidence=0.5
+            )
+            # Set swipe threshold from config
+            swipe_threshold = self.config.get('gesture_settings.swipe_threshold', 100)
+            self.hand_gesture_recognizer.swipe_threshold = swipe_threshold
+            self._setup_hand_gesture_callbacks()
+        
         # Application state
         self.is_running = False
         self.is_calibrating = False
         self.show_ui = True
         self.fps = 0
+        self.last_eye_gesture = None
+        self.last_hand_gesture = None
+        
+        # Setup eye gesture callbacks
+        self._setup_eye_gesture_callbacks()
         
         self.logger.info("Eye Tracking Application initialized")
     
@@ -98,6 +119,112 @@ class EyeTrackingApp:
         self.camera.set(cv2.CAP_PROP_FPS, camera_config.get('fps', 30))
         
         self.logger.info(f"Camera initialized: {device_id}")
+    
+    def _setup_eye_gesture_callbacks(self):
+        """Setup callbacks for eye gestures."""
+        # Single blink -> single click
+        self.eye_tracker.register_gesture_callback(
+            EyeGesture.SINGLE_BLINK,
+            lambda: self._on_eye_gesture(EyeGesture.SINGLE_BLINK)
+        )
+        
+        # Double blink -> double click / open
+        self.eye_tracker.register_gesture_callback(
+            EyeGesture.DOUBLE_BLINK,
+            lambda: self._on_eye_gesture(EyeGesture.DOUBLE_BLINK)
+        )
+        
+        # Long blink -> right click
+        self.eye_tracker.register_gesture_callback(
+            EyeGesture.LONG_BLINK,
+            lambda: self._on_eye_gesture(EyeGesture.LONG_BLINK)
+        )
+        
+        # Directional gazes -> scroll
+        self.eye_tracker.register_gesture_callback(
+            EyeGesture.LOOK_UP,
+            lambda: self._on_eye_gesture(EyeGesture.LOOK_UP)
+        )
+        
+        self.eye_tracker.register_gesture_callback(
+            EyeGesture.LOOK_DOWN,
+            lambda: self._on_eye_gesture(EyeGesture.LOOK_DOWN)
+        )
+    
+    def _setup_hand_gesture_callbacks(self):
+        """Setup callbacks for hand gestures."""
+        if not self.hand_gesture_recognizer:
+            return
+        
+        # Define gesture action mapping
+        gesture_actions = {
+            HandGesture.FIST: lambda: self._on_hand_gesture(HandGesture.FIST),
+            HandGesture.OPEN_PALM: lambda: self._on_hand_gesture(HandGesture.OPEN_PALM),
+            HandGesture.THUMBS_UP: lambda: self._on_hand_gesture(HandGesture.THUMBS_UP),
+            HandGesture.THUMBS_DOWN: lambda: self._on_hand_gesture(HandGesture.THUMBS_DOWN),
+            HandGesture.PEACE: lambda: self._on_hand_gesture(HandGesture.PEACE),
+            HandGesture.SWIPE_UP: lambda: self._on_hand_gesture(HandGesture.SWIPE_UP),
+            HandGesture.SWIPE_DOWN: lambda: self._on_hand_gesture(HandGesture.SWIPE_DOWN),
+        }
+        
+        # Register callbacks
+        for gesture, callback in gesture_actions.items():
+            self.hand_gesture_recognizer.register_callback(gesture, callback)
+    
+    def _on_eye_gesture(self, gesture: EyeGesture):
+        """Handle eye gesture detection."""
+        self.last_eye_gesture = gesture
+        
+        if gesture == EyeGesture.SINGLE_BLINK:
+            # Single click
+            if self.mouse_controller.is_enabled:
+                self.mouse_controller.click()
+                self.logger.info("Eye gesture: Single blink -> Click")
+        
+        elif gesture == EyeGesture.DOUBLE_BLINK:
+            # Double click / Open
+            if self.mouse_controller.is_enabled:
+                self.mouse_controller.double_click()
+                self.logger.info("Eye gesture: Double blink -> Double click")
+        
+        elif gesture == EyeGesture.LONG_BLINK:
+            # Right click
+            if self.mouse_controller.is_enabled:
+                self.mouse_controller.right_click()
+                self.logger.info("Eye gesture: Long blink -> Right click")
+        
+        elif gesture == EyeGesture.LOOK_UP:
+            # Scroll up
+            if self.mouse_controller.is_enabled:
+                self.mouse_controller.scroll(3)
+                self.logger.debug("Eye gesture: Look up -> Scroll up")
+        
+        elif gesture == EyeGesture.LOOK_DOWN:
+            # Scroll down
+            if self.mouse_controller.is_enabled:
+                self.mouse_controller.scroll(-3)
+                self.logger.debug("Eye gesture: Look down -> Scroll down")
+    
+    def _on_hand_gesture(self, gesture: HandGesture):
+        """Handle hand gesture detection."""
+        self.last_hand_gesture = gesture
+        
+        # Define gesture action mapping
+        gesture_actions = {
+            HandGesture.FIST: lambda: (self.mouse_controller.click(), "Fist -> Click"),
+            HandGesture.OPEN_PALM: lambda: (self.mouse_controller.right_click(), "Open palm -> Right click"),
+            HandGesture.THUMBS_UP: lambda: (self.mouse_controller.scroll(5), None),  # No log for frequent actions
+            HandGesture.THUMBS_DOWN: lambda: (self.mouse_controller.scroll(-5), None),
+            HandGesture.PEACE: lambda: (self.mouse_controller.double_click(), "Peace -> Double click"),
+            HandGesture.SWIPE_UP: lambda: (self.mouse_controller.scroll(10), "Swipe up -> Page up"),
+            HandGesture.SWIPE_DOWN: lambda: (self.mouse_controller.scroll(-10), "Swipe down -> Page down"),
+        }
+        
+        # Execute action if mapped
+        if gesture in gesture_actions:
+            result = gesture_actions[gesture]()
+            if result and result[1]:  # Log if message provided
+                self.logger.info(f"Hand gesture: {result[1]}")
     
     def start_calibration(self):
         """Start calibration process."""
@@ -128,6 +255,11 @@ class EyeTrackingApp:
             self.logger.info(f"Mouse control: {'enabled' if self.mouse_controller.is_enabled else 'disabled'}")
         elif key == ord('h'):  # Toggle UI
             self.show_ui = not self.show_ui
+        elif key == ord('g'):  # Toggle hand gestures
+            if self.hand_gesture_recognizer:
+                self.hand_gesture_recognizer.toggle()
+                status = "enabled" if self.hand_gesture_recognizer.is_enabled else "disabled"
+                self.logger.info(f"Hand gestures: {status}")
         elif key == ord('r'):  # Reset calibration
             self.calibration.reset()
             self.eye_tracker.reset_calibration()
@@ -151,6 +283,11 @@ class EyeTrackingApp:
         gaze_ratio = None
         if eye_data and eye_data.get('gaze_ratio'):
             gaze_ratio = self.eye_tracker.get_smoothed_gaze(eye_data['gaze_ratio'])
+        
+        # Detect eye gestures (only when not calibrating)
+        if not self.is_calibrating and eye_data:
+            eye_gesture = self.eye_tracker.detect_eye_gesture(eye_data)
+            # Gesture callbacks handle the actions
         
         # Handle calibration
         if self.is_calibrating:
@@ -203,9 +340,7 @@ class EyeTrackingApp:
                     # Handle clicking based on mode
                     if self.mouse_controller.click_mode == ClickMode.DWELL:
                         self.mouse_controller.check_dwell_click(screen_pos)
-                    elif self.mouse_controller.click_mode == ClickMode.BLINK:
-                        is_blinking = self.eye_tracker.detect_blink(eye_data)
-                        self.mouse_controller.check_blink_click(is_blinking)
+                    # Note: Blink clicking now handled by gesture system
                     
                     # Draw gaze indicator on screen
                     if self.show_ui:
@@ -234,6 +369,11 @@ class EyeTrackingApp:
                     self.calibration.screen_height
                 )
                 self.virtual_keyboard.update(screen_pos, processed_frame)
+        
+        # Process hand gestures
+        if self.hand_gesture_recognizer and self.hand_gesture_recognizer.is_enabled:
+            processed_frame, hand_gesture = self.hand_gesture_recognizer.process_frame(processed_frame)
+            # Gesture callbacks handle the actions
         
         # Draw UI
         if self.show_ui:
@@ -274,13 +414,33 @@ class EyeTrackingApp:
         cv2.putText(frame, cal_status, (10, 90),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, cal_color, 2)
         
+        # Draw hand gesture status
+        if self.hand_gesture_recognizer:
+            hand_status = "Hand: ON" if self.hand_gesture_recognizer.is_enabled else "Hand: OFF"
+            hand_color = (0, 255, 0) if self.hand_gesture_recognizer.is_enabled else (0, 0, 255)
+            cv2.putText(frame, hand_status, (10, 120),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, hand_color, 2)
+        
+        # Draw last gestures
+        gesture_y = 150
+        if self.last_eye_gesture:
+            gesture_text = f"Eye: {self.last_eye_gesture.value}"
+            cv2.putText(frame, gesture_text, (10, gesture_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        
+        if self.last_hand_gesture:
+            gesture_text = f"Hand: {self.last_hand_gesture.value}"
+            cv2.putText(frame, gesture_text, (10, gesture_y + 25),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        
         # Draw help text
-        help_y = h - 100
+        help_y = h - 120
         help_texts = [
             "Q/ESC: Quit",
             "C: Calibrate",
             "K: Keyboard",
             "M: Toggle Mouse",
+            "G: Toggle Hand Gestures",
             "H: Hide UI"
         ]
         for i, text in enumerate(help_texts):
@@ -333,6 +493,9 @@ class EyeTrackingApp:
         
         if self.eye_tracker:
             self.eye_tracker.release()
+        
+        if self.hand_gesture_recognizer:
+            self.hand_gesture_recognizer.release()
         
         cv2.destroyAllWindows()
         

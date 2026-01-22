@@ -32,7 +32,21 @@ keyboard:
 accessibility:
   blink_detection: true
   gesture_control: true
+  hand_gestures: true
   voice_feedback: false
+  
+gesture_settings:
+  # Eye gesture settings
+  blink_threshold: 0.25
+  double_blink_interval: 0.5
+  long_blink_duration: 0.8
+  gaze_direction_threshold: 0.15
+  
+  # Hand gesture settings
+  hand_detection_confidence: 0.7
+  hand_tracking_confidence: 0.5
+  gesture_cooldown: 0.5
+  swipe_threshold: 100  # Minimum pixel distance for swipe detection
 
 ui:
   show_video_feed: true

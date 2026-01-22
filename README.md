@@ -14,9 +14,21 @@ A comprehensive, deployment-ready eye tracking system that enables people with p
 ### Core Functionality
 - **Real-time Eye Tracking**: Uses MediaPipe Face Mesh for accurate eye detection and tracking
 - **Mouse Control**: Control cursor movement through eye gaze
+- **Advanced Eye Gestures**:
+  - Single blink for single click
+  - Double blink for double click/open
+  - Long blink for right click
+  - Look left/right for horizontal navigation
+  - Look up/down for scrolling
+- **Hand Gesture Recognition**: Control system with hand gestures
+  - Fist for click
+  - Open palm for right click
+  - Peace sign for double click
+  - Thumbs up/down for scrolling
+  - Swipe gestures for navigation
 - **Multiple Click Modes**:
   - Dwell clicking (look at a point for specified time)
-  - Blink detection for clicking
+  - Gesture-based clicking (blinks and hand gestures)
   - Manual keyboard trigger
 - **Virtual Keyboard**: On-screen keyboard for eye-controlled typing
 - **Calibration System**: 9-point calibration for accurate gaze mapping
@@ -25,9 +37,11 @@ A comprehensive, deployment-ready eye tracking system that enables people with p
 ### Accessibility Features
 - Adjustable sensitivity and dwell times
 - Visual feedback indicators
-- Customizable click modes
+- Customizable gesture sensitivity
+- Multiple input methods (eye + hand)
 - Keyboard shortcuts for control
 - Performance monitoring
+- Real-time gesture feedback
 
 ### Technical Features
 - Built with OpenCV and MediaPipe
@@ -35,6 +49,8 @@ A comprehensive, deployment-ready eye tracking system that enables people with p
 - Configurable via YAML files
 - Comprehensive logging system
 - Real-time performance metrics
+- Advanced gesture recognition
+- Multi-modal input (eye + hand)
 
 ## 📋 Requirements
 
@@ -99,9 +115,31 @@ python examples/mouse_control.py
 | `C` | Start calibration |
 | `K` | Toggle virtual keyboard |
 | `M` | Toggle mouse control on/off |
+| `G` | Toggle hand gesture recognition |
 | `H` | Hide/show UI |
 | `R` | Reset calibration |
 | `SPACE` | Manual click (when in manual mode) |
+
+## 🎮 Gesture Controls
+
+### Eye Gestures
+- **Single Blink**: Click
+- **Double Blink**: Double click / Open
+- **Long Blink** (0.8s+): Right click
+- **Look Up**: Scroll up
+- **Look Down**: Scroll down
+- **Look Left/Right**: Navigate horizontally
+
+### Hand Gestures
+- **Fist**: Click
+- **Open Palm**: Right click
+- **Peace Sign** (✌️): Double click
+- **Thumbs Up** (👍): Scroll up
+- **Thumbs Down** (👎): Scroll down
+- **Swipe Up/Down**: Page up/down
+- **Swipe Left/Right**: Navigate back/forward
+
+For detailed gesture guide, see [GESTURE_GUIDE.md](docs/GESTURE_GUIDE.md)
 
 ## 🎮 How to Use
 
@@ -122,9 +160,14 @@ python examples/mouse_control.py
 3. **Enable Mouse Control**
    - After calibration, mouse control is automatically enabled
    - Move your eyes to control the cursor
-   - Dwell on a location for 1.5 seconds to click
+   - Use gestures or dwell to click
 
-4. **Using the Virtual Keyboard**
+4. **Try Gestures**
+   - **Eye Gestures**: Try single blink, double blink, and directional gaze
+   - **Hand Gestures**: Press `G` to enable, try fist, open palm, peace sign
+   - See [Gesture Guide](docs/GESTURE_GUIDE.md) for complete list
+
+5. **Using the Virtual Keyboard**
    - Press `K` to show/hide the virtual keyboard
    - Look at keys to select them
    - Dwell on a key to type it
@@ -132,11 +175,13 @@ python examples/mouse_control.py
 
 ### Tips for Best Performance
 
-1. **Lighting**: Use good, even lighting on your face
+1. **Lighting**: Use good, even lighting on your face and hands
 2. **Camera Position**: Position camera at eye level, about 50-70cm away
 3. **Posture**: Maintain consistent head position
 4. **Calibration**: Recalibrate if accuracy decreases
 5. **Practice**: Takes a few minutes to get comfortable with eye control
+6. **Gestures**: Start with basic gestures (single blink, fist) before trying advanced ones
+7. **Hand Position**: Keep hand visible and well-lit for hand gestures
 
 ## 🔧 Configuration
 
@@ -153,6 +198,19 @@ calibration:
   num_points: 9          # Number of calibration points (4, 5, or 9)
   samples_per_point: 30  # Samples collected per point
   dwell_time: 2.0       # Time to look at each calibration point
+
+accessibility:
+  blink_detection: true   # Enable eye gesture detection
+  gesture_control: true   # Enable gesture system
+  hand_gestures: true     # Enable hand gesture recognition
+
+gesture_settings:
+  blink_threshold: 0.25              # Sensitivity for blink detection
+  double_blink_interval: 0.5         # Max time between double blinks
+  long_blink_duration: 0.8           # Min duration for long blink
+  gaze_direction_threshold: 0.15     # Sensitivity for directional gaze
+  hand_detection_confidence: 0.7     # Hand detection confidence
+  gesture_cooldown: 0.5              # Time between gesture activations
 ```
 
 ## 📁 Project Structure
@@ -161,21 +219,25 @@ calibration:
 Eye-tracking-system-for-disable-people/
 ├── src/
 │   ├── core/
-│   │   ├── eye_tracker.py          # Eye tracking engine
-│   │   ├── mouse_controller.py     # Mouse control logic
-│   │   ├── calibration.py          # Calibration system
-│   │   └── virtual_keyboard.py     # Virtual keyboard
+│   │   ├── eye_tracker.py              # Eye tracking engine
+│   │   ├── mouse_controller.py         # Mouse control logic
+│   │   ├── calibration.py              # Calibration system
+│   │   ├── virtual_keyboard.py         # Virtual keyboard
+│   │   ├── gesture_manager.py          # Eye gesture detection
+│   │   └── hand_gesture_recognizer.py  # Hand gesture recognition
 │   ├── utils/
-│   │   ├── config.py               # Configuration management
-│   │   └── logger.py               # Logging utilities
-│   └── main.py                     # Main application
+│   │   ├── config.py                   # Configuration management
+│   │   └── logger.py                   # Logging utilities
+│   └── main.py                         # Main application
 ├── examples/
-│   ├── basic_tracking.py           # Basic tracking example
-│   └── mouse_control.py            # Mouse control example
+│   ├── basic_tracking.py               # Basic tracking example
+│   └── mouse_control.py                # Mouse control example
+├── docs/
+│   └── GESTURE_GUIDE.md                # Complete gesture guide
 ├── config/
-│   └── default_config.yaml         # Default configuration
-├── requirements.txt                # Python dependencies
-└── README.md                       # This file
+│   └── default_config.yaml             # Default configuration
+├── requirements.txt                    # Python dependencies
+└── README.md                           # This file
 ```
 
 ## 🛠️ Technical Details
@@ -184,15 +246,24 @@ Eye-tracking-system-for-disable-people/
 1. **Face Detection**: MediaPipe Face Mesh detects facial landmarks
 2. **Eye Region Extraction**: Identifies eye contours and iris positions
 3. **Gaze Estimation**: Calculates gaze ratio from iris position relative to eye
-4. **Smoothing**: Moving average filter reduces jitter
-5. **Calibration**: Maps gaze coordinates to screen coordinates
-6. **Action**: Controls mouse cursor or activates clicks
+4. **Gesture Detection**: Analyzes eye movements and blinks for gestures
+5. **Smoothing**: Moving average filter reduces jitter
+6. **Calibration**: Maps gaze coordinates to screen coordinates
+7. **Action**: Controls mouse cursor or activates clicks
+
+### Hand Tracking Pipeline
+1. **Hand Detection**: MediaPipe Hands detects hand landmarks
+2. **Gesture Recognition**: Analyzes finger positions and movements
+3. **Gesture Classification**: Identifies specific gestures
+4. **Action Mapping**: Triggers corresponding system actions
 
 ### Algorithms
 - **Eye Aspect Ratio (EAR)**: For blink detection
 - **Iris Position Tracking**: Using MediaPipe's refined landmarks
 - **Inverse Distance Weighting**: For calibration mapping
 - **Moving Average**: For gaze smoothing
+- **Gesture State Machines**: For complex gesture detection
+- **Hand Landmark Analysis**: For finger state recognition
 
 ## 🐛 Troubleshooting
 
@@ -215,7 +286,15 @@ Eye-tracking-system-for-disable-people/
 ### Clicks Not Working
 - Ensure clicking is enabled
 - Check `dwell_time` setting (lower = faster clicks)
-- Try different click modes (dwell vs blink)
+- Try gesture-based clicking (blinks or hand gestures)
+- Verify gesture detection is working (check UI feedback)
+
+### Gestures Not Detected
+- Ensure good lighting conditions
+- Adjust gesture sensitivity in config
+- Practice clear, deliberate gestures
+- Check gesture cooldown settings
+- See [Gesture Guide](docs/GESTURE_GUIDE.md) for detailed troubleshooting
 
 ## 🤝 Contributing
 
@@ -248,14 +327,18 @@ This system is designed for:
 ## 🎓 Future Enhancements
 
 Potential improvements for future versions:
-- [ ] Eye gesture recognition (wink, look up/down for actions)
+- [x] Advanced eye gesture recognition (wink, look directions)
+- [x] Hand gesture integration
 - [ ] Voice command integration
 - [ ] Mobile app support (iOS/Android)
 - [ ] Cloud-based calibration profiles
 - [ ] Machine learning for improved accuracy
 - [ ] Multi-monitor support
-- [ ] Customizable action triggers
+- [ ] Customizable gesture mapping
 - [ ] Integration with screen readers
+- [ ] Head tilt controls
+- [ ] Facial expression recognition
+- [ ] Gesture macros and sequences
 
 ---
 
