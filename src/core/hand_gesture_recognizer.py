@@ -44,6 +44,7 @@ class HandGestureRecognizer:
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             max_num_hands=max_hands,
+            model_complexity=0,  # Use lite model for better performance
             min_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence
         )
@@ -54,8 +55,13 @@ class HandGestureRecognizer:
         # Gesture state
         self.last_gesture = None
         self.gesture_start_time = None
-        self.gesture_cooldown = 0.5  # seconds between gestures
+        self.gesture_cooldown = 1.0  # Increased cooldown between gestures
         self.last_gesture_time = 0
+        
+        # Gesture confirmation - require stable detection
+        self.pending_gesture = None
+        self.confirmation_count = 0
+        self.confirmation_threshold = 3  # Must see same gesture for 3+ frames
         
         # Hand position history for swipe detection
         self.hand_positions = []
@@ -121,17 +127,33 @@ class HandGestureRecognizer:
                     if swipe_gesture:
                         detected_gesture = swipe_gesture
         else:
-            # Clear position history when no hand detected
+            # Clear position history and pending gesture when no hand detected
             if len(self.hand_positions) > 0:
                 self.hand_positions.clear()
+            self.pending_gesture = None
+            self.confirmation_count = 0
         
-        # Trigger callback if gesture detected
-        if detected_gesture and detected_gesture in self.gesture_callbacks:
+        # Gesture confirmation logic - require stable detection
+        confirmed_gesture = None
+        if detected_gesture:
+            if detected_gesture == self.pending_gesture:
+                self.confirmation_count += 1
+                if self.confirmation_count >= self.confirmation_threshold:
+                    confirmed_gesture = detected_gesture
+                    self.confirmation_count = 0  # Reset after confirmation
+            else:
+                # New gesture detected, start counting
+                self.pending_gesture = detected_gesture
+                self.confirmation_count = 1
+        
+        # Trigger callback only for confirmed gestures
+        if confirmed_gesture and confirmed_gesture in self.gesture_callbacks:
             if current_time - self.last_gesture_time > self.gesture_cooldown:
-                self.gesture_callbacks[detected_gesture]()
+                self.gesture_callbacks[confirmed_gesture]()
                 self.last_gesture_time = current_time
+                self.pending_gesture = None  # Clear after triggering
         
-        return frame, detected_gesture
+        return frame, confirmed_gesture
     
     def _get_palm_center(self, hand_landmarks, w: int, h: int) -> Optional[Tuple[int, int]]:
         """Get the center of palm."""

@@ -5,6 +5,7 @@ camera:
   width: 640
   height: 480
   fps: 30
+  use_threaded: true  # Use threaded camera for better performance
 
 eye_tracking:
   max_faces: 1
@@ -36,17 +37,18 @@ accessibility:
   voice_feedback: false
   
 gesture_settings:
-  # Eye gesture settings
-  blink_threshold: 0.25
-  double_blink_interval: 0.5
-  long_blink_duration: 0.8
-  gaze_direction_threshold: 0.15
+  # Eye gesture settings (optimized for precision)
+  blink_threshold: 0.22           # Lower = harder to trigger blink
+  double_blink_interval: 0.4      # Shorter window for double blink
+  long_blink_duration: 1.0        # Longer hold required for right-click
+  gaze_direction_threshold: 0.20  # Less sensitive to avoid false triggers
   
-  # Hand gesture settings
-  hand_detection_confidence: 0.7
-  hand_tracking_confidence: 0.5
-  gesture_cooldown: 0.5
-  swipe_threshold: 100  # Minimum pixel distance for swipe detection
+  # Hand gesture settings (optimized for performance)
+  hand_detection_confidence: 0.75  # Higher = fewer false detections
+  hand_tracking_confidence: 0.7    # Higher = more stable tracking
+  gesture_cooldown: 0.8            # Longer cooldown between gestures
+  swipe_threshold: 150             # Larger movement needed for swipe
+  model_complexity: 0              # 0=lite (faster), 1=full (more accurate)
 
 ui:
   show_video_feed: true

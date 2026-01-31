@@ -26,12 +26,13 @@ from utils.logger import setup_logger, PerformanceLogger
 class EyeTrackingApp:
     """Main application for eye tracking system."""
     
-    def __init__(self, config_file: str = None):
+    def __init__(self, config_file: str = None, gesture_mode: int = 3):
         """
         Initialize application.
         
         Args:
             config_file: Path to configuration file
+            gesture_mode: Gesture control mode (1=Eye only, 2=Hand only, 3=Both)
         """
         # Load configuration
         self.config = Config(config_file)
@@ -75,14 +76,21 @@ class EyeTrackingApp:
             dwell_time=self.config.get('keyboard.dwell_time', 1.5)
         )
         
-        # Initialize hand gesture recognizer
-        self.hand_gesture_enabled = self.config.get('accessibility.hand_gestures', True)
+        # Store gesture mode (1=Eye only, 2=Hand only, 3=Both)
+        self.gesture_mode = gesture_mode
+        self.gesture_mode_names = {1: "Eye Only", 2: "Hand Only", 3: "Both"}
+        
+        # Initialize eye gesture handling based on mode
+        self.eye_gesture_enabled = gesture_mode in [1, 3]  # Enable for Eye only or Both
+        
+        # Initialize hand gesture recognizer based on mode
+        self.hand_gesture_enabled = gesture_mode in [2, 3]  # Enable for Hand only or Both
         self.hand_gesture_recognizer = None
         if self.hand_gesture_enabled:
             self.hand_gesture_recognizer = HandGestureRecognizer(
                 max_hands=1,
-                min_detection_confidence=0.7,
-                min_tracking_confidence=0.5
+                min_detection_confidence=self.config.get('gesture_settings.hand_detection_confidence', 0.75),
+                min_tracking_confidence=self.config.get('gesture_settings.hand_tracking_confidence', 0.7)
             )
             # Set swipe threshold from config
             swipe_threshold = self.config.get('gesture_settings.swipe_threshold', 100)
@@ -96,17 +104,35 @@ class EyeTrackingApp:
         self.fps = 0
         self.last_eye_gesture = None
         self.last_hand_gesture = None
+        self.frame_count = 0  # For frame skipping optimization
+        self.hand_gesture_skip_frames = 2  # Process hand gestures every Nth frame
         
-        # Setup eye gesture callbacks
-        self._setup_eye_gesture_callbacks()
+        # Setup eye gesture callbacks only if eye gestures are enabled
+        if self.eye_gesture_enabled:
+            self._setup_eye_gesture_callbacks()
         
-        self.logger.info("Eye Tracking Application initialized")
+        self.logger.info(f"Eye Tracking Application initialized (Mode: {self.gesture_mode_names[gesture_mode]})")
     
     def init_camera(self):
         """Initialize camera."""
         camera_config = self.config.get_section('camera')
         device_id = camera_config.get('device_id', 0)
+        use_threaded = camera_config.get('use_threaded', True)  # Enable by default
         
+        width = camera_config.get('width', 640)
+        height = camera_config.get('height', 480)
+        fps = camera_config.get('fps', 30)
+        
+        if use_threaded:
+            try:
+                from utils.threaded_camera import ThreadedCamera
+                self.camera = ThreadedCamera(device_id, width, height, fps)
+                self.logger.info(f"Threaded camera initialized: {device_id}")
+                return
+            except Exception as e:
+                self.logger.warning(f"Failed to use threaded camera: {e}, falling back to standard")
+        
+        # Fallback to standard camera
         self.camera = cv2.VideoCapture(device_id)
         
         if not self.camera.isOpened():
@@ -114,9 +140,9 @@ class EyeTrackingApp:
             raise RuntimeError(f"Cannot open camera {device_id}")
         
         # Set camera properties
-        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, camera_config.get('width', 640))
-        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_config.get('height', 480))
-        self.camera.set(cv2.CAP_PROP_FPS, camera_config.get('fps', 30))
+        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self.camera.set(cv2.CAP_PROP_FPS, fps)
         
         self.logger.info(f"Camera initialized: {device_id}")
     
@@ -272,6 +298,7 @@ class EyeTrackingApp:
     def process_frame(self, frame: np.ndarray) -> np.ndarray:
         """Process a single frame."""
         self.perf_logger.start_timer("frame")
+        self.frame_count += 1  # Increment frame counter
         
         # Track eyes
         processed_frame, eye_data = self.eye_tracker.process_frame(frame)
@@ -284,8 +311,8 @@ class EyeTrackingApp:
         if eye_data and eye_data.get('gaze_ratio'):
             gaze_ratio = self.eye_tracker.get_smoothed_gaze(eye_data['gaze_ratio'])
         
-        # Detect eye gestures (only when not calibrating)
-        if not self.is_calibrating and eye_data:
+        # Detect eye gestures (only when not calibrating and eye gestures enabled)
+        if not self.is_calibrating and eye_data and self.eye_gesture_enabled:
             eye_gesture = self.eye_tracker.detect_eye_gesture(eye_data)
             # Gesture callbacks handle the actions
         
@@ -370,10 +397,11 @@ class EyeTrackingApp:
                 )
                 self.virtual_keyboard.update(screen_pos, processed_frame)
         
-        # Process hand gestures
+        # Process hand gestures (skip frames for performance)
         if self.hand_gesture_recognizer and self.hand_gesture_recognizer.is_enabled:
-            processed_frame, hand_gesture = self.hand_gesture_recognizer.process_frame(processed_frame)
-            # Gesture callbacks handle the actions
+            if self.frame_count % self.hand_gesture_skip_frames == 0:
+                processed_frame, hand_gesture = self.hand_gesture_recognizer.process_frame(processed_frame)
+                # Gesture callbacks handle the actions
         
         # Draw UI
         if self.show_ui:
@@ -414,12 +442,10 @@ class EyeTrackingApp:
         cv2.putText(frame, cal_status, (10, 90),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, cal_color, 2)
         
-        # Draw hand gesture status
-        if self.hand_gesture_recognizer:
-            hand_status = "Hand: ON" if self.hand_gesture_recognizer.is_enabled else "Hand: OFF"
-            hand_color = (0, 255, 0) if self.hand_gesture_recognizer.is_enabled else (0, 0, 255)
-            cv2.putText(frame, hand_status, (10, 120),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, hand_color, 2)
+        # Draw gesture mode
+        mode_text = f"Mode: {self.gesture_mode_names[self.gesture_mode]}"
+        cv2.putText(frame, mode_text, (10, 120),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 200, 0), 2)
         
         # Draw last gestures
         gesture_y = 150
@@ -451,6 +477,12 @@ class EyeTrackingApp:
         """Run main application loop."""
         self.is_running = True
         self.logger.info("Starting eye tracking application")
+        
+        # Create window with always-on-top property
+        window_name = "Eye Tracking System"
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)  # Always on top
+        cv2.resizeWindow(window_name, 320, 240)  # Smaller overlay window
         
         try:
             while self.is_running:
@@ -502,16 +534,58 @@ class EyeTrackingApp:
         self.logger.info("Application closed")
 
 
+def show_gesture_menu():
+    """Display gesture selection menu at startup."""
+    print("\n" + "="*60)
+    print("   EYE TRACKING SYSTEM FOR PEOPLE WITH DISABILITIES")
+    print("="*60)
+    print("\nSelect gesture control mode:\n")
+    print("  [1] Eye Gestures Only")
+    print("      - Single blink → Click")
+    print("      - Double blink → Double click")
+    print("      - Long blink → Right click\n")
+    print("  [2] Hand Gestures Only")
+    print("      - Fist → Click")
+    print("      - Open palm → Right click")
+    print("      - Swipe up/down → Scroll\n")
+    print("  [3] Both Eye and Hand Gestures")
+    print("      - Use all gesture controls\n")
+    print("="*60)
+    
+    while True:
+        try:
+            choice = input("\nEnter your choice (1/2/3): ").strip()
+            if choice in ['1', '2', '3']:
+                return int(choice)
+            print("Invalid choice. Please enter 1, 2, or 3.")
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            sys.exit(0)
+
+
 def main():
     """Main entry point."""
     import argparse
     
     parser = argparse.ArgumentParser(description="Eye Tracking System for People with Disabilities")
     parser.add_argument('--config', type=str, help='Path to configuration file')
+    parser.add_argument('--mode', type=int, choices=[1, 2, 3], 
+                       help='Gesture mode: 1=Eye only, 2=Hand only, 3=Both (skips menu)')
     args = parser.parse_args()
     
+    # Show menu if mode not specified via command line
+    if args.mode:
+        gesture_mode = args.mode
+    else:
+        gesture_mode = show_gesture_menu()
+    
+    # Display selected mode
+    mode_names = {1: "Eye Gestures Only", 2: "Hand Gestures Only", 3: "Both Eye and Hand Gestures"}
+    print(f"\n✓ Selected: {mode_names[gesture_mode]}")
+    print("Starting application...\n")
+    
     try:
-        app = EyeTrackingApp(config_file=args.config)
+        app = EyeTrackingApp(config_file=args.config, gesture_mode=gesture_mode)
         app.run()
     except Exception as e:
         print(f"Fatal error: {e}")
@@ -524,3 +598,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
